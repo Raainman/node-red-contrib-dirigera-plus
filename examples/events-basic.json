@@ -1,0 +1,4 @@
+[
+  {"id":"evt_example_1","type":"dirigera-events","z":"dirigera_plus_example","name":"all hub events","server":"","eventType":"","deviceId":"","deviceTitle":"","deviceType":"","x":250,"y":120,"wires":[["evt_example_dbg"]]},
+  {"id":"evt_example_dbg","type":"debug","z":"dirigera_plus_example","name":"event","active":true,"tosidebar":true,"console":false,"tostatus":true,"complete":"payload","targetType":"msg","statusVal":"topic","statusType":"msg","x":470,"y":120,"wires":[]}
+]

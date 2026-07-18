@@ -1,0 +1,334 @@
+<script type="text/javascript">
+
+  RED.nodes.registerType('dirigera-config', {
+    category: 'config',
+    defaults: {
+      name: { value: "" },
+    },
+    credentials: {
+      hubAddress: { type: "text" },
+      hubAccessCode: { type: "text" },
+    },
+    label: function () {
+      return this.name || "dirigeraHub"
+    },
+    oneditprepare: function () {
+      const node = this
+      $('#node-input-lookup-hubAccessCode-tip').hide()
+      $('#node-input-lookup-hubAccessCode-button').click(function () {
+        $('#node-input-lookup-hubAccessCode-tip').text('Press button on hub now within 60 sec !!!')
+        $('#node-input-tip-image').attr("src", "https://raw.githubusercontent.com/zinen/node-red-contrib-dirigera/main/image/push-button.jpg")
+        $('#node-input-lookup-hubAccessCode-tip').show()
+        $('#node-config-input-hubAccessCode').val('')
+        $.get('ikeaDirigera/auth', { hubAddress: $('#node-config-input-hubAddress').val(), clientName: $('#node-config-input-name').val() }, function (resp) {
+          let response = JSON.parse(resp)
+          if (response.error || !response.access_token) {
+            $('#node-input-lookup-hubAccessCode-tip').text('Error: ' + response.error)
+            $('#node-input-tip-image').attr("src", "")
+            return
+          }
+          $('#node-input-lookup-hubAccessCode-tip').text('Access code received OK. Ready to save this config')
+          $('#node-input-tip-image').attr("src", "")
+          $('#node-config-input-hubAccessCode').val(response.access_token)
+        })
+      })
+    }
+  })
+</script>
+
+<script type="text/html" data-template-name="dirigera-config">
+  <div class="form-row">
+      <label for="node-config-input-name"><i class="fa fa-tag"></i> Name</label>
+      <input type="text" id="node-config-input-name" placeholder="Optional name. See help text.">
+  </div>
+  <div class="form-row">
+      <label for="node-config-input-hubAddress"><i class="fa fa-globe"></i> Hub address ip/hostname</label>
+      <div style="width: 70%; display: inline-flex;">
+      <input type="text" id="node-config-input-hubAddress" placeholder="192.168.1.4" style="flex-grow: 1;">
+      <!-- <a id="node-input-lookup-hubAddress-button" class="editor-button" style="margin-left: 10px;"><i class="fa fa-refresh"></i></a> -->
+    </div>
+  </div>
+  <div class="form-row">
+      <label for="node-config-input-hubAccessCode"><i class="fa fa-key"></i> Access code</label>
+      <div style="width: 70%; display: inline-flex;">
+      <input type="text" id="node-config-input-hubAccessCode" placeholder="Auto filled. Press ==>" style="flex-grow: 1;" autocomplete="off">
+      <a id="node-input-lookup-hubAccessCode-button" class="editor-button" style="margin-left: 10px;">Get access code</a>
+    </div>
+  </div>
+  <div class="form-row">
+    <div class="form-tips" id="node-input-lookup-hubAccessCode-tip">.</div>
+    <img id="node-input-tip-image" src="" alt="">
+  </div>
+  </div>
+</script>
+
+<script type="text/html" data-help-name="dirigera-config">
+  <p>If name is filled when requesting access token this name can be found in the Dirigera app. Else it defaults to <code>node-red-dirigera</code></p>
+  <p>You can later redefine this name but that wont update the name inside the Dirigera app.</p>
+</script>
+
+<script type="text/javascript">
+  const updateTypes = (node) => {
+    let configNodeId = $('#node-input-server').find(":selected").val()
+    if (configNodeId == null || configNodeId === '_ADD_') return
+    $.get('ikeaDirigera/dirigera', { nodeId: configNodeId }, function (resp) {
+      if (!resp) return
+      let response = JSON.parse(resp)
+      if (response.error) {
+        console.error('Node-red Dirigera node error: ' + response.error)
+        return
+      }
+      $('#node-input-choiceType').find('option').remove()
+      let deviceTypes = Object.keys(response)
+      if (!Array.isArray(deviceTypes) || deviceTypes.length <= 0) return
+      $.each(deviceTypes, function (i, deviceTypes) {
+        let opt = {}
+        // opt.value = deviceTypes
+        opt.text = deviceTypes
+        if (node.choiceType === opt.text) {
+          opt.selected = "selected"
+        }
+        $('#node-input-choiceType').append($('<option>', opt))
+      })
+      $('#node-input-choiceType').change(function () {
+        updateChoiceList(response, node.choiceId)
+      })
+      updateChoiceList(response, node.choiceId)
+    })
+  }
+  const updateChoiceList = (response, choiceId) => {
+    $('#node-input-choiceId').find('option').remove()
+    let listItems = response[$('#node-input-choiceType').val()]
+    if (!Array.isArray(listItems) || listItems.length <= 0) return
+    $.each(listItems, function (i, room) {
+      let opt = {}
+      opt.value = room.id
+      opt.text = room.name
+      if (choiceId === opt.value) {
+        opt.selected = "selected"
+      }
+      $('#node-input-choiceId').append($('<option>', opt))
+    })
+  }
+  RED.nodes.registerType('dirigera', {
+    category: 'homesmart',
+    color: '#fbd914',
+    defaults: {
+      name: { value: "" },
+      server: { type: "dirigera-config", required: true },
+      choiceType: { value: "" },
+      choiceTitle: { value: "" },
+      choiceId: { value: "" },
+      choiceIcon: { value: "" },
+      outputs: { value: 1 }
+    },
+    inputs: 1,
+    outputs: 1,
+    icon: function () {
+      switch (this.choiceType) {
+        case "blinds":
+          return 'font-awesome/fa-window-maximize'
+        case "light":
+          return "font-awesome/fa-lightbulb-o"
+        case "controller":
+          return 'font-awesome/fa-power-off'
+        case "scene":
+          return 'font-awesome/fa-sitemap'
+        case "speaker":
+          return 'font-awesome/fa-volume-up'
+        case "outlet":
+          return 'font-awesome/fa-plug'
+        default:
+          break
+      }
+      return 'font-awesome/fa-home'
+    },
+    label: function () {
+      if (this.name) return this.name
+      if (this.choiceId === "-1") return "Dirigera Hub"
+      if (this.choiceId && String(this.choiceId).includes('override')) return this.choiceType + ' with id override'
+      return this.name || this.choiceTitle || "Dirigera Hub"
+    },
+    oneditprepare: function () {
+      const node = this
+      $('#node-input-choiceType').append($('<option>', { text: 'Waiting for data' }))
+      $('#node-input-choiceId').append($('<option>', { text: 'Waiting for data' }))
+      updateTypes(node)
+
+      $('#node-input-server').change(function () {
+        $('#node-input-choiceType').find('option').remove()
+        $('#node-input-choiceId').find('option').remove()
+        updateTypes(node)
+      })
+    },
+    oneditsave: function () {
+      this.choiceTitle = $('#node-input-choiceId').find(":selected").text()
+      this.outputs = $('#node-input-choiceType').find(":selected").text() == 'scene' ? 0 : 1
+    }
+  })
+</script>
+
+<script type="text/html" data-template-name="dirigera">
+  <div class="form-row">
+      <label for="node-input-name"><i class="fa fa-tag"></i> Name</label>
+      <input type="text" id="node-input-name" placeholder="Optional name">
+  </div>
+  <div class="form-row">
+      <label for="node-input-server"><i class="fa fa-cog"></i> Config</label>
+      <input type="text" id="node-input-server">
+  </div>
+  <div class="form-row">
+      <label for="node-input-choiceType"><i class="fa fa-home"></i> Type</label>
+      <select value="" id="node-input-choiceType">
+      </select>
+  </div>
+  <div class="form-row">
+    <label for="node-input-choiceId">Choose from list</label>
+    <select value="" id="node-input-choiceId">
+    </select>
+</div>
+</script>
+
+<script type="text/html" data-help-name="dirigera">
+  <p>Get status and apply changes to the Dirigera hub</p>
+  <p><i>If dropdowns are empty deploy config and look again.</i></p>
+  <h3>Input</h3>
+  <dl class="message-properties">
+    <dt>payload<span class="property-type">bool | number | string</span></dt>
+    <dd>Gets status on any input. If <code>msg.topic</code> is defined this sets the payload sent to Dirigera.</dd>
+    <dt class="optional">topic <span class="property-type">string</span></dt>
+    <dd>If defined will change this attribute on devices in the chosen room. Scene trigger does not support this.</dd>
+    <dt>deviceId/roomId<span class="property-type">string</span></dt>
+    <dd>Override must be chosen from dropdown for this to work. Input string of ID as seen in status output.</dd>
+  </dl>
+  <h3>Output</h3>
+  <dl class="message-properties">
+    <dt>payload<span class="property-type">object | array</span></dt>
+    <dd>Return output data from the hub.</dd>
+    <dt class="optional">availableTopics <span class="property-type">array</span></dt>
+    <dd>On status request tells which topics are supported</dd>
+  </dl>
+</script>
+
+<script type="text/javascript">
+  RED.nodes.registerType('dirigera-events', {
+    category: 'homesmart',
+    color: '#fbd914',
+    defaults: {
+      name: { value: "" },
+      server: { type: "dirigera-config", required: true },
+      eventType: { value: "" },
+      deviceId: { value: "" },
+      deviceTitle: { value: "" },
+      deviceType: { value: "" }
+    },
+    inputs: 0,
+    outputs: 1,
+    icon: "font-awesome/fa-rss",
+    label: function () {
+      if (this.name) return this.name
+      if (this.deviceTitle) return 'events: ' + this.deviceTitle
+      return "Dirigera events"
+    },
+    oneditprepare: function () {
+      const node = this
+      const populateDevices = () => {
+        let configNodeId = $('#node-input-server').find(":selected").val()
+        $('#node-input-deviceId').find('option').remove()
+        $('#node-input-deviceId').append($('<option>', { value: "", text: "All devices", selected: node.deviceId === "" }))
+        if (configNodeId == null || configNodeId === '_ADD_') return
+        $.get('ikeaDirigera/dirigera', { nodeId: configNodeId }, function (resp) {
+          if (!resp) return
+          let response = JSON.parse(resp)
+          if (response.error || !Array.isArray(response.specificDevice)) return
+          $.each(response.specificDevice, function (i, device) {
+            if (String(device.id).startsWith('override') || device.id === -1) return
+            $('#node-input-deviceId').append($('<option>', {
+              value: device.id,
+              text: device.name,
+              selected: node.deviceId === device.id
+            }))
+          })
+        })
+      }
+      populateDevices()
+      $('#node-input-server').change(populateDevices)
+    },
+    oneditsave: function () {
+      this.deviceTitle = $('#node-input-deviceId').val() === "" ? "" : $('#node-input-deviceId').find(":selected").text()
+    }
+  })
+</script>
+
+<script type="text/html" data-template-name="dirigera-events">
+  <div class="form-row">
+      <label for="node-input-name"><i class="fa fa-tag"></i> Name</label>
+      <input type="text" id="node-input-name" placeholder="Optional name">
+  </div>
+  <div class="form-row">
+      <label for="node-input-server"><i class="fa fa-cog"></i> Config</label>
+      <input type="text" id="node-input-server">
+  </div>
+  <div class="form-row">
+      <label for="node-input-eventType"><i class="fa fa-filter"></i> Event type</label>
+      <select id="node-input-eventType">
+        <option value="">All events</option>
+        <option value="deviceStateChanged">deviceStateChanged</option>
+        <option value="deviceAdded">deviceAdded</option>
+        <option value="deviceRemoved">deviceRemoved</option>
+        <option value="sceneUpdated">sceneUpdated</option>
+        <option value="sceneCreated">sceneCreated</option>
+        <option value="sceneDeleted">sceneDeleted</option>
+      </select>
+  </div>
+  <div class="form-row">
+      <label for="node-input-deviceId"><i class="fa fa-microchip"></i> Device</label>
+      <select id="node-input-deviceId">
+      </select>
+  </div>
+  <div class="form-row">
+      <label for="node-input-deviceType"><i class="fa fa-home"></i> Device type</label>
+      <select id="node-input-deviceType">
+        <option value="">All types</option>
+        <option value="light">light</option>
+        <option value="outlet">outlet</option>
+        <option value="blinds">blinds</option>
+        <option value="controller">controller</option>
+        <option value="sensor">sensor</option>
+        <option value="environmentSensor">environmentSensor</option>
+        <option value="motionSensor">motionSensor</option>
+        <option value="openCloseSensor">openCloseSensor</option>
+        <option value="waterSensor">waterSensor</option>
+        <option value="airPurifier">airPurifier</option>
+        <option value="speaker">speaker</option>
+        <option value="repeater">repeater</option>
+        <option value="gateway">gateway</option>
+      </select>
+  </div>
+</script>
+
+<script type="text/html" data-help-name="dirigera-events">
+  <p>Outputs live events pushed by the Dirigera hub via its websocket interface.</p>
+  <p>One shared websocket connection is used per hub config, no matter how many
+    event nodes are deployed. The connection reconnects automatically with
+    exponential backoff (max 60 s).</p>
+  <h3>Filters</h3>
+  <dl class="message-properties">
+    <dt>Event type</dt>
+    <dd>Only pass events of this type, e.g. <code>deviceStateChanged</code>. Empty = all.</dd>
+    <dt>Device</dt>
+    <dd>Only pass events for a specific device. Dropdown is populated from the hub
+      (deploy config first).</dd>
+    <dt>Device type</dt>
+    <dd>Only pass events for devices of this type, e.g. <code>motionSensor</code>. Empty = all.</dd>
+  </dl>
+  <h3>Output</h3>
+  <dl class="message-properties">
+    <dt>payload <span class="property-type">object</span></dt>
+    <dd>The <code>data</code> part of the event: device id, type and the changed attributes.</dd>
+    <dt>topic <span class="property-type">string</span></dt>
+    <dd>The event type, e.g. <code>deviceStateChanged</code>.</dd>
+    <dt>event <span class="property-type">object</span></dt>
+    <dd>The complete raw event including <code>id</code>, <code>time</code> and <code>source</code>.</dd>
+  </dl>
+</script>

@@ -1,0 +1,6 @@
+test/
+.github/
+.vscode/
+*.log
+.DS_Store
+CHANGELOG.md
