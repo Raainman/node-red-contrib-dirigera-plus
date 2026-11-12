@@ -1,6 +1,6 @@
 {
   "name": "node-red-contrib-dirigera-plus",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Node-RED nodes for the IKEA DIRIGERA hub: control devices/rooms/scenes and receive live hub events (motion, buttons, open/close, state changes) via websocket.",
   "keywords": [
     "node-red",

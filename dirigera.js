@@ -167,22 +167,68 @@ module.exports = function (RED) {
       if (node.eventListeners.size === 0) stopWebSocket()
     }
 
+    // --- REST client with automatic reconnect ---
+    node.restReconnectTimer = null
+    node.restReconnectDelay = 3000
+    node.restConnecting = false
+    node.restClosing = false
+
+    function scheduleRestReconnect () {
+      if (node.restClosing || node.restReconnectTimer) return
+
+      const delay = node.restReconnectDelay
+
+      node.warn('Dirigera REST client disconnected; retrying in ' + delay + ' ms')
+
+      node.restReconnectTimer = setTimeout(() => {
+        node.restReconnectTimer = null
+        connectRestClient()
+      }, delay)
+
+      node.restReconnectDelay = Math.min(delay * 2, 60000)
+    }
+
+    async function connectRestClient () {
+      if (node.restClosing || node.restConnecting) return
+      if (!node.credentials.hubAddress || !node.credentials.hubAccessCode) return
+
+      node.restConnecting = true
+
+      try {
+        const dirigeraHub = new DirigeraHub({
+          hubAddress: node.credentials.hubAddress,
+          access_token: node.credentials.hubAccessCode,
+          debug: 0
+        })
+
+        await dirigeraHub.logIn()
+
+        node.dirigeraClient = dirigeraHub
+        node.lastError = ''
+        node.restReconnectDelay = 3000
+      } catch (error) {
+        node.dirigeraClient = undefined
+        node.lastError = String(error) || ''
+        node.error('Dirigera config error: ' + error)
+        scheduleRestReconnect()
+      } finally {
+        node.restConnecting = false
+      }
+    }
+
     node.on('close', function (done) {
+      node.restClosing = true
+
+      if (node.restReconnectTimer) {
+        clearTimeout(node.restReconnectTimer)
+        node.restReconnectTimer = null
+      }
+
       stopWebSocket()
       done()
     })
 
-    // --- REST client (unchanged) ---
-    if (!node.credentials.hubAddress || !node.credentials.hubAccessCode) return
-    const dirigeraHub = new DirigeraHub({ hubAddress: node.credentials.hubAddress, access_token: node.credentials.hubAccessCode, debug: 0 })
-    dirigeraHub.logIn().then(() => {
-      node.dirigeraClient = dirigeraHub
-      node.lastError = ''
-    }).catch((error) => {
-      node.dirigeraClient = undefined
-      node.error('Dirigera config error: ' + error)
-      node.lastError = String(error) || ''
-    })
+    connectRestClient()
   }
   RED.nodes.registerType('dirigera-config', DirigeraConfigNode, {
     credentials: {
